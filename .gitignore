@@ -1,0 +1,13 @@
+*~
+.*.swp
+INSTALL
+README
+aclocal.m4
+compile
+configure
+depcomp
+install-sh
+missing
+autom4te.cache
+m200i-midi-config.h.in
+Makefile.in
