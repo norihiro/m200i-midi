@@ -13,6 +13,11 @@
 		(((a2)&0x7F) << 7) | \
 		( (a3)&0x7F      ) )
 
+#define addr_hep0(a) (((a)>>21) & 0x7F)
+#define addr_hep1(a) (((a)>>14) & 0x7F)
+#define addr_hep2(a) (((a)>> 7) & 0x7F)
+#define addr_hep3(a) ( (a)      & 0x7F)
+
 typedef enum
 {
 	s_init = 0,
@@ -63,10 +68,54 @@ int m200i_frontend::get_fds(fd_set *readfds, fd_set *writefds, fd_set *exceptfds
 	return fd;
 }
 
+inline
+static bool is_readonly(int addr)
+{
+	const uint8_t a0 = addr_hep0(addr);
+	const uint8_t a1 = addr_hep1(addr);
+	const uint8_t a2 = addr_hep2(addr);
+	const uint8_t a3 = addr_hep3(addr);
+	switch(a0) {
+		case 0x00: // input board parameters
+			if (0x00<=a1 && a1<=0x27) switch(a2<<8 | a3) {
+				case 0x0000: return 1;
+				case 0x0004: return 1;
+			}
+			else if (0x50<=a1 && a1<=0x67) switch(a2<<8 | a3) {
+				case 0x0000: return 1;
+			}
+			return 0;
+		case 0x01: // output board parameters
+			if (0x00<=a1 && a1<=0x27) switch(a2<<8 | a3) {
+				case 0x0000: return 1;
+			}
+			return 0;
+			// 0x02 - 0x0F has no read-only parameters.
+		case 0x10: // system
+			switch(a1<<16 | a2<<8 | a3) {
+				case 0x0101: return 1;
+				case 0x0112: return 1;
+				case 0x011A: return 1;
+				case 0x0122: return 1;
+				case 0x012A: return 1;
+			}
+			return 0;
+			// TODO: implement remaining parameters
+	}
+	return 0;
+}
+
+static void cache_dt(m200i_frontend_int &m, int addr, int size, const uint8_t *data)
+{
+	while (size-- > 0) {
+	if (0<=addr && addr<(int)sizeof(m.cache) && !is_readonly(addr)) {
+		m.cache[addr] = *data;
+	}
+	addr++; data++;
+}
+
 static void send_dt1(class midibase *base, m200i_frontend_int &m, int addr, int size, const uint8_t *data)
 {
-	if (m.state != s_handshaked)
-		return;
 
 	const int len = size+13;
 	uint8_t dt1[len];
@@ -91,13 +140,12 @@ static void send_dt1(class midibase *base, m200i_frontend_int &m, int addr, int 
 	dt1[size+12] = 0xF7;
 
 	fprintf(stderr, "Debug: send_dt1: name=%s addr=0x%X size=0x%X\n", base->get_name(), addr, size);
+	cache_dt(m, addr, size, data);
 	base->send(dt1, len);
 }
 
 static void send_rq1(class midibase *base, m200i_frontend_int &m, int addr, int size)
 {
-	if (m.state != s_handshaked)
-		return;
 	uint8_t rq1[] = {
 		0xF0,
 		0x41,
